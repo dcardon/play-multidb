@@ -69,7 +69,9 @@ public class DomainDBKeyExtractor implements RequestDBKeyExtractor
 	}
 }
  
-To override this method, simply create a single class in your Play application that implements the *RequestDBKeyExtractor* interface and the Multiple Database module will use that extractor instead.  (Make sure you only have one class that implements this interface, or the module will get confused).
+To override this method, simply create a single class in your Play application that implements the *RequestDBKeyExtractor* interface and the Multiple Database module will use that extractor instead.  (Make sure you only have one class that implements this interface, or the module will get confused).  
+
+NOTE: If the extractor returns null, the action method will still be invoked, so be cautious in returning null.  The null case is used when running a play.jobs.Job, for which no automatic transaction will be available.  If an invalid non-null database key is returned, the module will throw an InvalidDatabaseException when it attempts to start the transaction.
 
 h2. <a>Shared Database Parameters</a>
 
