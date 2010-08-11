@@ -255,149 +255,7 @@ public class MJPAPlugin extends CorePlugin
 			{
 				ComboPooledDataSource datasource = (ComboPooledDataSource) entry.getValue();
 				
-				Ejb3Configuration cfg = new Ejb3Configuration();
-				cfg.setDataSource(datasource);
-				if (!Play.configuration.getProperty("jpa.ddl", "update").equals("none"))
-				{
-					cfg.setProperty("hibernate.hbm2ddl.auto", Play.configuration.getProperty(
-							"jpa.ddl", "update"));
-				}
-				cfg.setProperty("hibernate.dialect", getDefaultDialect(datasource.getDriverClass()));
-				cfg.setProperty("javax.persistence.transaction", "RESOURCE_LOCAL");
-
-				// Explicit SAVE for JPASupport is implemented here
-				// ~~~~~~
-				// We've hacked the org.hibernate.event.def.AbstractFlushingEventListener line
-				// 271, to flush collection update,remove,recreation
-				// only if the owner will be saved.
-				// As is:
-				// if (session.getInterceptor().onCollectionUpdate(coll, ce.getLoadedKey())) {
-				// actionQueue.addAction(...);
-				// }
-				//
-				// This is really hacky. We should move to something better than Hibernate
-				// like EBEAN
-				cfg.setInterceptor(new EmptyInterceptor()
-				{
-					/**
-					 * Generated GUID for serialization support.
-					 */
-					private static final long serialVersionUID = -8670026536584880961L;
-
-					@Override
-					public int[] findDirty(Object o, Serializable id, Object[] arg2,
-							Object[] arg3, String[] arg4, Type[] arg5)
-					{
-						if (o instanceof JPASupport && !((JPASupport) o).willBeSaved)
-						{
-							return new int[0];
-						}
-						return null;
-					}
-
-					@Override
-					public boolean onCollectionUpdate(Object collection, Serializable key)
-							throws CallbackException
-					{
-						if (collection instanceof PersistentCollection)
-						{
-							Object o = ((PersistentCollection) collection).getOwner();
-							if (o instanceof JPASupport)
-							{
-								return ((JPASupport) o).willBeSaved;
-							}
-						}
-						else
-						{
-							System.out.println("HOO: Case not handled !!!");
-						}
-						return super.onCollectionUpdate(collection, key);
-					}
-
-					@Override
-					public boolean onCollectionRecreate(Object collection, Serializable key)
-							throws CallbackException
-					{
-						if (collection instanceof PersistentCollection)
-						{
-							Object o = ((PersistentCollection) collection).getOwner();
-							if (o instanceof JPASupport)
-							{
-								return ((JPASupport) o).willBeSaved;
-							}
-						}
-						else
-						{
-							System.out.println("HOO: Case not handled !!!");
-						}
-						return super.onCollectionRecreate(collection, key);
-					}
-
-					@Override
-					public boolean onCollectionRemove(Object collection, Serializable key)
-							throws CallbackException
-					{
-						if (collection instanceof PersistentCollection)
-						{
-							Object o = ((PersistentCollection) collection).getOwner();
-							if (o instanceof JPASupport)
-							{
-								return ((JPASupport) o).willBeSaved;
-							}
-						}
-						else
-						{
-							System.out.println("HOO: Case not handled !!!");
-						}
-						return super.onCollectionRemove(collection, key);
-					}
-				});
-				if (Play.configuration.getProperty("jpa.debugSQL", "false").equals("true"))
-				{
-					org.apache.log4j.Logger.getLogger("org.hibernate.SQL").setLevel(Level.ALL);
-				}
-				else
-				{
-					org.apache.log4j.Logger.getLogger("org.hibernate.SQL").setLevel(Level.OFF);
-				}
-				// inject additional hibernate.* settings declared in Play! configuration
-				cfg.addProperties((Properties) Utils.Maps.filterMap(Play.configuration,
-						"^hibernate\\..*"));
-
-				try
-				{
-					Field field = cfg.getClass().getDeclaredField("overridenClassLoader");
-					field.setAccessible(true);
-					field.set(cfg, Play.classloader);
-				}
-				catch (Exception e)
-				{
-					Logger.error(e,
-							"Error trying to override the hibernate classLoader (new hibernate version ???)");
-				}
-				for (Class<? extends Annotation> clazz : classes)
-				{
-					if (clazz.isAnnotationPresent(Entity.class))
-					{
-						cfg.addAnnotatedClass(clazz);
-						Logger.trace("JPA Model : %s", clazz);
-					}
-				}
-				String[] moreEntities = Play.configuration.getProperty("jpa.entities", "").split(
-						", ");
-				for (String entity : moreEntities)
-				{
-					if (entity.trim().equals(""))
-						continue;
-					try
-					{
-						cfg.addAnnotatedClass(Play.classloader.loadClass(entity));
-					}
-					catch (Exception e)
-					{
-						Logger.warn("JPA -> Entity not found: %s", entity);
-					}
-				}
+				Ejb3Configuration cfg = buildEjbConfiguration(classes, datasource);
 				Logger.trace("Initializing JPA ...");
 				try
 				{
@@ -446,5 +304,160 @@ public class MJPAPlugin extends CorePlugin
 		{
 			log.debug("Using default DB key extractor class: " + keyExtractor.getClass().getName());
 		}
+	}
+
+	/**
+	 * @param classes
+	 * @param datasource
+	 * @return
+	 */
+	@SuppressWarnings("unchecked")
+	public static Ejb3Configuration buildEjbConfiguration(List<Class> classes,
+			ComboPooledDataSource datasource)
+	{
+		Ejb3Configuration cfg = new Ejb3Configuration();
+		cfg.setDataSource(datasource);
+		if (!Play.configuration.getProperty("jpa.ddl", "update").equals("none"))
+		{
+			cfg.setProperty("hibernate.hbm2ddl.auto", Play.configuration.getProperty(
+					"jpa.ddl", "update"));
+		}
+		cfg.setProperty("hibernate.dialect", getDefaultDialect(datasource.getDriverClass()));
+		cfg.setProperty("javax.persistence.transaction", "RESOURCE_LOCAL");
+
+		// Explicit SAVE for JPASupport is implemented here
+		// ~~~~~~
+		// We've hacked the org.hibernate.event.def.AbstractFlushingEventListener line
+		// 271, to flush collection update,remove,recreation
+		// only if the owner will be saved.
+		// As is:
+		// if (session.getInterceptor().onCollectionUpdate(coll, ce.getLoadedKey())) {
+		// actionQueue.addAction(...);
+		// }
+		//
+		// This is really hacky. We should move to something better than Hibernate
+		// like EBEAN
+		cfg.setInterceptor(new EmptyInterceptor()
+		{
+			/**
+			 * Generated GUID for serialization support.
+			 */
+			private static final long serialVersionUID = -8670026536584880961L;
+
+			@Override
+			public int[] findDirty(Object o, Serializable id, Object[] arg2,
+					Object[] arg3, String[] arg4, Type[] arg5)
+			{
+				if (o instanceof JPASupport && !((JPASupport) o).willBeSaved)
+				{
+					return new int[0];
+				}
+				return null;
+			}
+
+			@Override
+			public boolean onCollectionUpdate(Object collection, Serializable key)
+					throws CallbackException
+			{
+				if (collection instanceof PersistentCollection)
+				{
+					Object o = ((PersistentCollection) collection).getOwner();
+					if (o instanceof JPASupport)
+					{
+						return ((JPASupport) o).willBeSaved;
+					}
+				}
+				else
+				{
+					System.out.println("HOO: Case not handled !!!");
+				}
+				return super.onCollectionUpdate(collection, key);
+			}
+
+			@Override
+			public boolean onCollectionRecreate(Object collection, Serializable key)
+					throws CallbackException
+			{
+				if (collection instanceof PersistentCollection)
+				{
+					Object o = ((PersistentCollection) collection).getOwner();
+					if (o instanceof JPASupport)
+					{
+						return ((JPASupport) o).willBeSaved;
+					}
+				}
+				else
+				{
+					System.out.println("HOO: Case not handled !!!");
+				}
+				return super.onCollectionRecreate(collection, key);
+			}
+
+			@Override
+			public boolean onCollectionRemove(Object collection, Serializable key)
+					throws CallbackException
+			{
+				if (collection instanceof PersistentCollection)
+				{
+					Object o = ((PersistentCollection) collection).getOwner();
+					if (o instanceof JPASupport)
+					{
+						return ((JPASupport) o).willBeSaved;
+					}
+				}
+				else
+				{
+					System.out.println("HOO: Case not handled !!!");
+				}
+				return super.onCollectionRemove(collection, key);
+			}
+		});
+		if (Play.configuration.getProperty("jpa.debugSQL", "false").equals("true"))
+		{
+			org.apache.log4j.Logger.getLogger("org.hibernate.SQL").setLevel(Level.ALL);
+		}
+		else
+		{
+			org.apache.log4j.Logger.getLogger("org.hibernate.SQL").setLevel(Level.OFF);
+		}
+		// inject additional hibernate.* settings declared in Play! configuration
+		cfg.addProperties((Properties) Utils.Maps.filterMap(Play.configuration,
+				"^hibernate\\..*"));
+
+		try
+		{
+			Field field = cfg.getClass().getDeclaredField("overridenClassLoader");
+			field.setAccessible(true);
+			field.set(cfg, Play.classloader);
+		}
+		catch (Exception e)
+		{
+			Logger.error(e,
+					"Error trying to override the hibernate classLoader (new hibernate version ???)");
+		}
+		for (Class<? extends Annotation> clazz : classes)
+		{
+			if (clazz.isAnnotationPresent(Entity.class))
+			{
+				cfg.addAnnotatedClass(clazz);
+				Logger.trace("JPA Model : %s", clazz);
+			}
+		}
+		String[] moreEntities = Play.configuration.getProperty("jpa.entities", "").split(
+				", ");
+		for (String entity : moreEntities)
+		{
+			if (entity.trim().equals(""))
+				continue;
+			try
+			{
+				cfg.addAnnotatedClass(Play.classloader.loadClass(entity));
+			}
+			catch (Exception e)
+			{
+				Logger.warn("JPA -> Entity not found: %s", entity);
+			}
+		}
+		return cfg;
 	}
 }

@@ -1,22 +1,32 @@
 package play.db;
 
+import java.beans.PropertyVetoException;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.sql.Connection;
 import java.sql.Driver;
 import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Map.Entry;
 
+import javax.persistence.Entity;
+import javax.persistence.EntityManagerFactory;
+import javax.persistence.PersistenceException;
 import javax.sql.DataSource;
 
 import org.apache.commons.lang.StringUtils;
+import org.hibernate.ejb.Ejb3Configuration;
 
 import play.Logger;
 import play.Play;
 import play.PlayPlugin;
+import play.db.jpa.JPA;
+import play.db.jpa.MJPAPlugin;
+import play.exceptions.JPAException;
 
 import com.mchange.v2.c3p0.ComboPooledDataSource;
 
@@ -28,14 +38,14 @@ public class MDBPlugin extends PlayPlugin
 
 	private static final String MDB_ALL_KEY = "all";
 	private static final String MDB_CONF_PREFIX = "mdb.";
-	private static final String MDB_DRIVER_PREFIX = MDB_CONF_PREFIX + "driver.";
-	private static final String MDB_URL_PREFIX = MDB_CONF_PREFIX + "url.";
-	private static final String MDB_USER_PREFIX = MDB_CONF_PREFIX + "user.";
-	private static final String MDB_PASS_PREFIX = MDB_CONF_PREFIX + "pass.";
-	private static final String MDB_POOL_TIMEOUT_PREFIX = MDB_CONF_PREFIX + "pool.timeout.";
-	private static final String MDB_POOL_MAX_PREFIX = MDB_CONF_PREFIX + "pool.maxSize.";
-	private static final String MDB_POOL_MIN_PREFIX = MDB_CONF_PREFIX + "pool.minSize.";
-	private static final String MDB_KEY_PREFIX = MDB_CONF_PREFIX + "key.";
+	public static final String MDB_DRIVER_PREFIX = MDB_CONF_PREFIX + "driver.";
+	public static final String MDB_URL_PREFIX = MDB_CONF_PREFIX + "url.";
+	public static final String MDB_USER_PREFIX = MDB_CONF_PREFIX + "user.";
+	public static final String MDB_PASS_PREFIX = MDB_CONF_PREFIX + "pass.";
+	public static final String MDB_POOL_TIMEOUT_PREFIX = MDB_CONF_PREFIX + "pool.timeout.";
+	public static final String MDB_POOL_MAX_PREFIX = MDB_CONF_PREFIX + "pool.maxSize.";
+	public static final String MDB_POOL_MIN_PREFIX = MDB_CONF_PREFIX + "pool.minSize.";
+	public static final String MDB_KEY_PREFIX = MDB_CONF_PREFIX + "key.";
 
 	@Override
 	public void onApplicationStart()
@@ -118,46 +128,7 @@ public class MDBPlugin extends PlayPlugin
 					dbMap.put(mapKey, mapEntry);
 				}
 				
-				if (propKey.startsWith(MDB_DRIVER_PREFIX))
-				{
-					mapEntry.driver = (String) entry.getValue();
-				}
-				else if (propKey.startsWith(MDB_DRIVER_PREFIX))
-				{
-					mapEntry.driver = (String) entry.getValue();
-				}
-				else if (propKey.startsWith(MDB_KEY_PREFIX))
-				{
-					mapEntry.key = (String) entry.getValue();
-				}
-				else if (propKey.startsWith(MDB_URL_PREFIX))
-				{
-					mapEntry.url = (String) entry.getValue();
-				}
-				else if (propKey.startsWith(MDB_USER_PREFIX))
-				{
-					mapEntry.user = (String) entry.getValue();
-				}
-				else if (propKey.startsWith(MDB_PASS_PREFIX))
-				{
-					mapEntry.pass = (String) entry.getValue();
-				}
-				else if (propKey.startsWith(MDB_POOL_TIMEOUT_PREFIX))
-				{
-					mapEntry.poolTimeout = (String) entry.getValue();
-				}
-				else if (propKey.startsWith(MDB_POOL_MAX_PREFIX))
-				{
-					mapEntry.poolMaxSize = (String) entry.getValue();
-				}
-				else if (propKey.startsWith(MDB_POOL_MIN_PREFIX))
-				{
-					mapEntry.poolMinSize = (String) entry.getValue();
-				}
-				else
-				{
-					Logger.warn("Unrecognized MDB key: " + propKey);
-				}
+				applyParameter((String) entry.getValue(), propKey, mapEntry);
 			}
 			else
 			{
@@ -166,6 +137,52 @@ public class MDBPlugin extends PlayPlugin
 		}
 		
 		return dbMap;
+	}
+
+	/**
+	 * @param entry
+	 * @param propKey
+	 * @param mapEntry
+	 */
+	private static void applyParameter(String propValue, String propKey,
+			DbParameters mapEntry)
+	{
+		if (propKey.startsWith(MDB_DRIVER_PREFIX))
+		{
+			mapEntry.driver = propValue;
+		}
+		else if (propKey.startsWith(MDB_KEY_PREFIX))
+		{
+			mapEntry.key = propValue;
+		}
+		else if (propKey.startsWith(MDB_URL_PREFIX))
+		{
+			mapEntry.url = propValue;
+		}
+		else if (propKey.startsWith(MDB_USER_PREFIX))
+		{
+			mapEntry.user = propValue;
+		}
+		else if (propKey.startsWith(MDB_PASS_PREFIX))
+		{
+			mapEntry.pass = propValue;
+		}
+		else if (propKey.startsWith(MDB_POOL_TIMEOUT_PREFIX))
+		{
+			mapEntry.poolTimeout = propValue;
+		}
+		else if (propKey.startsWith(MDB_POOL_MAX_PREFIX))
+		{
+			mapEntry.poolMaxSize = propValue;
+		}
+		else if (propKey.startsWith(MDB_POOL_MIN_PREFIX))
+		{
+			mapEntry.poolMinSize = propValue;
+		}
+		else
+		{
+			Logger.warn("Unrecognized MDB key: " + propKey);
+		}
 	}
 
 	@Override
@@ -248,7 +265,34 @@ public class MDBPlugin extends PlayPlugin
 	 * @param parms
 	 * @throws Exception
 	 */
-	private void makeConnection(DbParameters parms) throws Exception
+	private static void makeConnection(DbParameters parms) throws Exception
+	{
+		ComboPooledDataSource ds = makeDatasource(parms);
+		MDB.datasources.put(parms.key, ds);
+		Connection c = null;
+		try
+		{
+			c = ds.getConnection();
+		}
+		finally
+		{
+			if (c != null)
+			{
+				c.close();
+			}
+		}
+		Logger.info("Connected to %s", ds.getJdbcUrl());
+	}
+
+	/**
+	 * @param parms
+	 * @return
+	 * @throws Exception
+	 * @throws SQLException
+	 * @throws PropertyVetoException
+	 */
+	private static ComboPooledDataSource makeDatasource(DbParameters parms)
+			throws Exception, SQLException, PropertyVetoException
 	{
 		// Try the driver
 		String driver = parms.driver;
@@ -297,20 +341,7 @@ public class MDBPlugin extends PlayPlugin
 		ds.setMaxPoolSize(Integer.parseInt(StringUtils.defaultIfEmpty(parms.poolMaxSize, "30")));
 		ds.setMinPoolSize(Integer.parseInt(StringUtils.defaultIfEmpty(parms.poolMinSize, "1")));
 		ds.setTestConnectionOnCheckout(true);
-		MDB.datasources.put(parms.key, ds);
-		Connection c = null;
-		try
-		{
-			c = ds.getConnection();
-		}
-		finally
-		{
-			if (c != null)
-			{
-				c.close();
-			}
-		}
-		Logger.info("Connected to %s", ds.getJdbcUrl());
+		return ds;
 	}
 
 	/**
@@ -386,5 +417,86 @@ public class MDBPlugin extends PlayPlugin
 		}
 		
 		return hasChanged;
+	}
+	
+	/**
+	 * Adds a database to the application server while it's running.
+	 * @param dbParms
+	 */
+	@SuppressWarnings("unchecked")
+	public static void addDatabase(Map<String, String> dbParms)
+	{
+		Map<String, DbParameters> dbMap = extractDbParameters();
+		DbParameters allEntry = dbMap.get(MDB_ALL_KEY);
+		if (allEntry == null)
+		{
+			allEntry = new DbParameters();
+		}
+		
+		DbParameters dbParm = new DbParameters();
+		for (Entry<String, String> entry : dbParms.entrySet())
+		{
+			applyParameter(entry.getValue(), entry.getKey(), dbParm);
+		}
+		
+		//
+		//	Inherit from the 'all' entry.
+		//
+		dbParm.inherit(allEntry);
+		
+		try
+		{
+			ComboPooledDataSource ds = makeDatasource(dbParm);
+			synchronized (MDB.datasources)
+			{
+				MDB.datasources.put(dbParm.key, ds);
+			}
+			Connection c = null;
+			try
+			{
+				c = ds.getConnection();
+				
+				List<Class> classes = Play.classloader.getAnnotatedClasses(Entity.class);
+				if (classes.isEmpty()
+						&& Play.configuration.getProperty("jpa.entities", "").equals(""))
+				{
+					return;
+				}
+				//
+				//	Now, add the datasource into the MJPAPlugin
+				//
+				Ejb3Configuration cfg = MJPAPlugin.buildEjbConfiguration(classes, ds);
+				
+				Logger.trace("Initializing JPA ...");
+				try
+				{
+					EntityManagerFactory factory = cfg.buildEntityManagerFactory(); 
+					JPA.entityManagerFactory = factory;
+					
+					synchronized (MJPAPlugin.factoryMap)
+					{
+						MJPAPlugin.factoryMap.put(dbParm.key, factory);
+					}
+				}
+				catch (PersistenceException e)
+				{
+					throw new JPAException(e.getMessage(), e.getCause() != null
+							? e.getCause() : e);
+				}
+				
+			}
+			finally
+			{
+				if (c != null)
+				{
+					c.close();
+				}
+			}
+			Logger.info("Connected to %s", ds.getJdbcUrl());
+		}
+		catch (Exception e)
+		{
+			Logger.error(e, "Error adding database: " + dbParms);
+		}
 	}
 }
