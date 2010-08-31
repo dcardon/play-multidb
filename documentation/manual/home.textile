@@ -34,7 +34,7 @@ mdb.pass.2=test
 Finally, you need to comment-out / delete configuration entries for Play's default single-database (starting with 'db.' or 'db=').
 
 h3. <a>Database Keys and Parameters</a>
- 
+
 Looking at the previous example configuration you'll probably notice some similarities to Play's native database parameters; db.XXXX have been replaced with mdb.XXXXX.{group}.  Because your application has multiple databases, their parameters are associated with one another using the .{group} suffix.  In the example, the groups are numbers, but any alpha-numeric identifier may be used.
 
 One important new parameter is **mdb.key.{group}**.  This parameter identifies the key to finding the correct database to use when each HTTP request comes into your Play application.  By default, the Multiple Database module uses the URL's domain name as the key to identify a database to connect to.  So, to test this example configuration, we would give the machine running your Play! application the names of 'host1' and 'host2'.  Requests at 'host1' would use 'db1', where requests at 'host2' would use 'db2'.
@@ -53,7 +53,7 @@ h3. <a>Customizing Database Key Extraction</a>
 
 The default database key extractor implements the *RequestDBKeyExtractor* interface.  This interface has a single method: 
 
-.bc  String extractKey(Http.Request request);
+bc. String extractKey(Http.Request request);
 
 This method simply operates on the incoming request, extracting and returning the database key from it.  The default implementation is thus very simple:
 
@@ -68,7 +68,8 @@ public class DomainDBKeyExtractor implements RequestDBKeyExtractor
 		return (request == null ? null : request.domain);
 	}
 }
- 
+
+
 To override this method, simply create a single class in your Play application that implements the *RequestDBKeyExtractor* interface and the Multiple Database module will use that extractor instead.  (Make sure you only have one class that implements this interface, or the module will get confused).  
 
 NOTE: If the extractor returns null, the action method will still be invoked, so be cautious in returning null.  The null case is used when running a play.jobs.Job, for which no automatic transaction will be available.  If an invalid non-null database key is returned, the module will throw an InvalidDatabaseException when it attempts to start the transaction.
@@ -92,6 +93,16 @@ mdb.url.1=jdbc:mysql://localhost/db1
 mdb.key.2=host2
 mdb.url.2=jdbc:mysql://localhost/db2
 
+h2. <a>Runtime Update</a>
+
+In some applications you may want to add a new database to the application 'on-the-fly'.  There is a convenience method that makes this easier: MDBPlugin.addDatabase(Map propertyMap).  The passed propertyMap mimics the values from the application.conf file (e.g., mdb.key.new=newhost, etc).  Note that the convenience method honors the 'all' group mentioned in the previous section.
+
+h2. <a>No Database Configuration</a>
+
+Since updating an application at runtime is allowed, it might be convenient to start successfully with no database access.  To allow this state add the following line to your application.conf file:
+
+bc. mjpa.runWithNoDB=true
+
 h2. <a>A Few Caveats</a>
 
 It's important to remember that this is a new module, and, although it tries to integrate as smoothly as possible with Play!, using this module may disrupt some aspects of existing Play! applications.  Here is just a short list of things to watch out for:
@@ -99,4 +110,3 @@ It's important to remember that this is a new module, and, although it tries to 
 # Compatibility: For now, this has only been implemented and tested on the 1.0 branch.  If you need it for 1.1 and it doesn't work, please consider contributing!
 # Transactions: The module essentially overrides the JPAPlugin class and modifies how the JPA class gets its entity manager for the request.  All direct programmatic transaction processing needs to use the *MJPAPlugin.startTx(String dbKey, boolean readOnly)* method, instead of *JPAPlugin.startTx(boolean readOnly)*
 # Jobs: Since jobs have no associated Http.Request, Play jobs don't run within an automatic transaction.  Therefore, transaction management will have to be done by hand using the *MJPAPlugin.startTx(String dbKey, boolean readOnly)* method.
- 

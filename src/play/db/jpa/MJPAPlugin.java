@@ -12,8 +12,11 @@ import java.util.Map.Entry;
 import javax.persistence.Entity;
 import javax.persistence.EntityManager;
 import javax.persistence.EntityManagerFactory;
+import javax.persistence.EntityTransaction;
 import javax.persistence.FlushModeType;
+import javax.persistence.LockModeType;
 import javax.persistence.PersistenceException;
+import javax.persistence.Query;
 import javax.sql.DataSource;
 
 import org.apache.commons.logging.Log;
@@ -64,11 +67,24 @@ public class MJPAPlugin extends CorePlugin
 		// Prevent the regular JPA Plugin from starting a transaction.
 		//
 		JPA.entityManagerFactory = null;
+		
+		//
+		//	If we have no databases defined, and we have a directive to permit this state, allow it.
+		//
+		if (factoryMap.isEmpty() && Play.configuration.getProperty("mjpa.runWithNoDB","").equals("true"))
+		{
+			log.debug("Empty factory map--using dummy factory");
+			JPA.entityManagerFactory = getDummyFactory();
+			return;
+		}
+		
+		log.debug("Extracting DB key from request: " + Request.current());
 
 		//
 		// Find the database key, so that we'll have one for the transaction.
 		//
 		String dbKey = keyExtractor.extractKey(Request.current());
+		log.debug("Found key: " + dbKey);
 		try
 		{
 			if (dbKey != null)
@@ -94,9 +110,11 @@ public class MJPAPlugin extends CorePlugin
 	public static void startTx(String dbKey, boolean readOnly)
 	{
 		EntityManagerFactory factory = factoryMap.get(dbKey);
+		log.debug("Starting transaction with factory" + factory + " on DB: " + dbKey);
 		if (dbKey == null || factory == null)
-		{
-			throw new InvalidDatabaseException("connection: " + dbKey);
+		{	
+			log.warn("No database found for key: '" + dbKey + "'.  Skipping database connection.");
+			return;
 		}
 
 		EntityManager manager = factory.createEntityManager();
@@ -105,6 +123,7 @@ public class MJPAPlugin extends CorePlugin
 		{
 			manager.getTransaction().begin();
 		}
+		log.debug("Creating JPA context: " + manager + " for db: " + dbKey);
 		JPA.createContext(manager, readOnly);
 	}
 
@@ -244,33 +263,45 @@ public class MJPAPlugin extends CorePlugin
 			}
 			if (MDB.datasources == null || MDB.datasources.isEmpty())
 			{
-				throw new JPAException(
-						"Cannot start a JPA manager without properly configured databases",
-						new NullPointerException("No datasource"));
+                if (Play.configuration.getProperty("mjpa.runWithNoDB","").equals("true"))
+                {
+                	//
+                	//	Create a dummy entity manager factory, so that JPA is prevented from screaming.
+                	//
+                	JPA.entityManagerFactory = getDummyFactory();
+                	log.info("No properly configured databases found.  JPA will not be initialized until databases are added");
+                }
+                else
+                {
+                    throw new JPAException("Cannot start a MJPA manager without a properly configured database", new NullPointerException("No datasource configured"));
+                }
 			}
-			//
-			//	Iterate over the datasources and build a configuration for each.
-			//
-			for (Entry<String, DataSource> entry : MDB.datasources.entrySet())
+			else
 			{
-				ComboPooledDataSource datasource = (ComboPooledDataSource) entry.getValue();
-				
-				Ejb3Configuration cfg = buildEjbConfiguration(classes, datasource);
-				Logger.trace("Initializing JPA ...");
-				try
-				{
-					EntityManagerFactory factory = cfg.buildEntityManagerFactory(); 
-					JPA.entityManagerFactory = factory;
-					factoryMap.put(entry.getKey(), factory);
-					log.debug("Added datasource: " + datasource.getJdbcUrl());
-				}
-				catch (PersistenceException e)
-				{
-					throw new JPAException(e.getMessage(), e.getCause() != null
-							? e.getCause() : e);
-				}
-				JPQLDialect.instance = new JPQLDialect();
+    			//
+    			//	Iterate over the datasources and build a configuration for each.
+    			//
+    			for (Entry<String, DataSource> entry : MDB.datasources.entrySet())
+    			{
+    				ComboPooledDataSource datasource = (ComboPooledDataSource) entry.getValue();
+    				
+    				Ejb3Configuration cfg = buildEjbConfiguration(classes, datasource);
+    				Logger.trace("Initializing JPA ...");
+    				try
+    				{
+    					EntityManagerFactory factory = cfg.buildEntityManagerFactory(); 
+    					JPA.entityManagerFactory = factory;
+    					factoryMap.put(entry.getKey(), factory);
+    					log.debug("Added datasource: " + datasource.getJdbcUrl());
+    				}
+    				catch (PersistenceException e)
+    				{
+    					throw new JPAException(e.getMessage(), e.getCause() != null
+    							? e.getCause() : e);
+    				}
+    			}
 			}
+			JPQLDialect.instance = new JPQLDialect();
 		}
 		
 		//
@@ -451,7 +482,15 @@ public class MJPAPlugin extends CorePlugin
 				continue;
 			try
 			{
-				cfg.addAnnotatedClass(Play.classloader.loadClass(entity));
+				if (Play.classes.getApplicationClass(entity) == null)
+				{
+					cfg.addAnnotatedClass(Play.classloader.loadClass(entity));
+				}
+				else
+				{
+					cfg.addAnnotatedClass(Play.classes.getApplicationClass(entity).javaClass);
+				}
+				
 			}
 			catch (Exception e)
 			{
@@ -459,5 +498,200 @@ public class MJPAPlugin extends CorePlugin
 			}
 		}
 		return cfg;
+	}
+	
+	private static EntityManagerFactory getDummyFactory()
+	{
+		return new EntityManagerFactory() {
+
+			@Override
+			public void close()
+			{
+			}
+
+			@Override
+			public EntityManager createEntityManager()
+			{
+				return getDummyManager();
+			}
+
+			@SuppressWarnings("unchecked")
+			@Override
+			public EntityManager createEntityManager(Map arg0)
+			{
+				return getDummyManager();
+			}
+
+			@Override
+			public boolean isOpen()
+			{
+				return false;
+			}
+			
+		};
+	}
+	
+	private static EntityManager getDummyManager()
+	{
+		return new EntityManager()
+		{
+			@Override
+			public void clear()
+			{
+			}
+
+			@Override
+			public void close()
+			{
+			}
+
+			@Override
+			public boolean contains(Object arg0)
+			{
+				return false;
+			}
+
+			@Override
+			public Query createNamedQuery(String arg0)
+			{
+				return null;
+			}
+
+			@Override
+			public Query createNativeQuery(String arg0)
+			{
+				return null;
+			}
+
+			@SuppressWarnings("unchecked")
+			@Override
+			public Query createNativeQuery(String arg0, Class arg1)
+			{
+				return null;
+			}
+
+			@Override
+			public Query createNativeQuery(String arg0, String arg1)
+			{
+				return null;
+			}
+
+			@Override
+			public Query createQuery(String arg0)
+			{
+				return null;
+			}
+
+			@Override
+			public <T> T find(Class<T> arg0, Object arg1)
+			{
+				return null;
+			}
+
+			@Override
+			public void flush()
+			{
+			}
+
+			@Override
+			public Object getDelegate()
+			{
+				return null;
+			}
+
+			@Override
+			public FlushModeType getFlushMode()
+			{
+				return null;
+			}
+
+			@Override
+			public <T> T getReference(Class<T> arg0, Object arg1)
+			{
+				return null;
+			}
+
+			@Override
+			public EntityTransaction getTransaction()
+			{
+				return new EntityTransaction()
+				{
+					@Override
+					public void begin()
+					{
+					}
+
+					@Override
+					public void commit()
+					{
+					}
+
+					@Override
+					public boolean getRollbackOnly()
+					{
+						return false;
+					}
+
+					@Override
+					public boolean isActive()
+					{
+						return false;
+					}
+
+					@Override
+					public void rollback()
+					{
+					}
+
+					@Override
+					public void setRollbackOnly()
+					{
+					}
+				};
+			}
+
+			@Override
+			public boolean isOpen()
+			{
+				return false;
+			}
+
+			@Override
+			public void joinTransaction()
+			{
+			}
+
+			@Override
+			public void lock(Object arg0, LockModeType arg1)
+			{
+			}
+
+			@Override
+			public <T> T merge(T arg0)
+			{
+				return null;
+			}
+
+			@Override
+			public void persist(Object arg0)
+			{
+			}
+
+			@Override
+			public void refresh(Object arg0)
+			{
+			}
+
+			@Override
+			public void remove(Object arg0)
+			{
+			}
+
+			@Override
+			public void setFlushMode(FlushModeType arg0)
+			{
+			}
+			
+		};
 	}
 }
