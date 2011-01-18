@@ -17,6 +17,12 @@ import javax.persistence.FlushModeType;
 import javax.persistence.LockModeType;
 import javax.persistence.PersistenceException;
 import javax.persistence.Query;
+import javax.persistence.Cache;
+import javax.persistence.PersistenceUnitUtil;
+import javax.persistence.TypedQuery;
+import javax.persistence.criteria.CriteriaBuilder;
+import javax.persistence.criteria.CriteriaQuery;
+import javax.persistence.metamodel.Metamodel;
 import javax.sql.DataSource;
 
 import org.apache.commons.logging.Log;
@@ -28,7 +34,7 @@ import org.hibernate.collection.PersistentCollection;
 import org.hibernate.ejb.Ejb3Configuration;
 import org.hibernate.type.Type;
 
-import play.CorePlugin;
+import play.PlayPlugin;
 import play.Logger;
 import play.Play;
 import play.db.MDB;
@@ -44,7 +50,7 @@ import com.mchange.v2.c3p0.ComboPooledDataSource;
  * 
  * @author dcardon
  */
-public class MJPAPlugin extends CorePlugin
+public class MJPAPlugin extends PlayPlugin
 {
 	public static Log log = LogFactory.getLog(MJPAPlugin.class);
 
@@ -301,7 +307,7 @@ public class MJPAPlugin extends CorePlugin
     				}
     			}
 			}
-			JPQLDialect.instance = new JPQLDialect();
+			JPQL.instance = new JPQL();
 		}
 		
 		//
@@ -379,7 +385,7 @@ public class MJPAPlugin extends CorePlugin
 			public int[] findDirty(Object o, Serializable id, Object[] arg2,
 					Object[] arg3, String[] arg4, Type[] arg5)
 			{
-				if (o instanceof JPASupport && !((JPASupport) o).willBeSaved)
+				if (o instanceof JPABase && !((JPABase) o).willBeSaved)
 				{
 					return new int[0];
 				}
@@ -393,9 +399,9 @@ public class MJPAPlugin extends CorePlugin
 				if (collection instanceof PersistentCollection)
 				{
 					Object o = ((PersistentCollection) collection).getOwner();
-					if (o instanceof JPASupport)
+					if (o instanceof JPABase)
 					{
-						return ((JPASupport) o).willBeSaved;
+						return ((JPABase) o).willBeSaved;
 					}
 				}
 				else
@@ -412,9 +418,9 @@ public class MJPAPlugin extends CorePlugin
 				if (collection instanceof PersistentCollection)
 				{
 					Object o = ((PersistentCollection) collection).getOwner();
-					if (o instanceof JPASupport)
+					if (o instanceof JPABase)
 					{
-						return ((JPASupport) o).willBeSaved;
+						return ((JPABase) o).willBeSaved;
 					}
 				}
 				else
@@ -431,9 +437,9 @@ public class MJPAPlugin extends CorePlugin
 				if (collection instanceof PersistentCollection)
 				{
 					Object o = ((PersistentCollection) collection).getOwner();
-					if (o instanceof JPASupport)
+					if (o instanceof JPABase)
 					{
-						return ((JPASupport) o).willBeSaved;
+						return ((JPABase) o).willBeSaved;
 					}
 				}
 				else
@@ -528,6 +534,30 @@ public class MJPAPlugin extends CorePlugin
 				return false;
 			}
 			
+			@Override
+			public Cache getCache() {
+				return null;
+			}
+			
+			@Override
+			public CriteriaBuilder getCriteriaBuilder() {
+				return null;
+			}
+			
+			@Override
+			public Metamodel getMetamodel() {
+				return null;
+			}
+			
+			@Override
+			public PersistenceUnitUtil getPersistenceUnitUtil() {
+				return null;
+			}
+			
+			@Override
+			public Map<String, Object> getProperties() {
+				return null;
+			}
 		};
 	}
 	
@@ -690,6 +720,92 @@ public class MJPAPlugin extends CorePlugin
 			@Override
 			public void setFlushMode(FlushModeType arg0)
 			{
+			}
+
+			@Override
+			public <T> TypedQuery<T> createNamedQuery(String arg0, Class<T> arg1) {
+				return null;
+			}
+
+			@Override
+			public <T> TypedQuery<T> createQuery(CriteriaQuery<T> arg0) {
+				return null;
+			}
+
+			@Override
+			public <T> TypedQuery<T> createQuery(String arg0, Class<T> arg1) {
+				return null;
+			}
+
+			@Override
+			public void detach(Object arg0) {
+			}
+
+			@Override
+			public <T> T find(Class<T> arg0, Object arg1, Map<String, Object> arg2) {
+				return null;
+			}
+
+			@Override
+			public <T> T find(Class<T> arg0, Object arg1, LockModeType arg2) {
+				return null;
+			}
+
+			@Override
+			public <T> T find(Class<T> arg0, Object arg1, LockModeType arg2,
+			 Map<String, Object> arg3) {
+				return null;
+			}
+
+			@Override
+			public CriteriaBuilder getCriteriaBuilder() {
+				return null;
+			}
+
+			@Override
+			public EntityManagerFactory getEntityManagerFactory() {
+				return null;
+			}
+
+			@Override
+			public LockModeType getLockMode(Object arg0) {
+				return null;
+			}
+
+			@Override
+			public Metamodel getMetamodel() {
+				return null;
+			}
+
+			@Override
+			public Map<String, Object> getProperties() {
+				return null;
+			}
+
+			@Override
+			public void lock(Object arg0, LockModeType arg1, Map<String, Object> arg2) {
+			}
+
+			@Override
+			public void refresh(Object arg0, Map<String, Object> arg1) {
+			}
+
+			@Override
+			public void refresh(Object arg0, LockModeType arg1) {
+			}
+
+			@Override
+			public void refresh(Object arg0, LockModeType arg1,
+			 Map<String, Object> arg2) {
+			}
+
+			@Override
+			public void setProperty(String arg0, Object arg1) {
+			}
+
+			@Override
+			public <T> T unwrap(Class<T> arg0) {
+				return null;
 			}
 			
 		};

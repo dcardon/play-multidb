@@ -27,7 +27,7 @@
                 <include name="**/play.static"/>
             </fileset>
         </copy>
-        <jar destfile="lib/multidb-1.1.jar" basedir="tmp/classes">
+        <jar destfile="lib/multidb-1.3.jar" basedir="tmp/classes">
             <manifest>
                 <section name="Play">
                     <attribute name="Specification-Title" value="MultiDB module"/>
